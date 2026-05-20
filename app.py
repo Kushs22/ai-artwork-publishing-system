@@ -3,6 +3,16 @@ import json
 
 import streamlit as st
 
+from export_utils import (
+    DEFAULT_EXPORT_DIR,
+    build_zip_bytes,
+    install_pack_to_folder,
+    list_image_files,
+    list_pack_files,
+    normalize_export_path,
+    open_folder_in_finder,
+)
+
 from approval import (
     approve_artwork,
     reject_artwork,
@@ -115,6 +125,88 @@ def metadata_form(artwork, key_prefix: str) -> ArtworkMetadata:
     return ArtworkMetadata(
         title=title, theme=theme, collection=collection, format=fmt, platforms=platforms, website=website
     )
+
+
+def get_export_folder() -> str:
+    return normalize_export_path(
+        st.session_state.get("export_folder", DEFAULT_EXPORT_DIR)
+    )
+
+
+def render_save_and_download(folder: str, pack_label: str = "", key_suffix: str = ""):
+    """Download ZIP / images to browser, or copy pack to a folder on this computer."""
+    if not folder or not os.path.isdir(folder):
+        return
+
+    kid = key_suffix or str(abs(hash(folder)))
+
+    st.markdown("### Save to your computer")
+    export_root = get_export_folder()
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        try:
+            zip_bytes = build_zip_bytes(folder)
+            st.download_button(
+                label="Download ZIP (all files)",
+                data=zip_bytes,
+                file_name=f"{pack_label or 'artflow'}_pack.zip",
+                mime="application/zip",
+                key=f"zip_{kid}",
+                type="primary",
+            )
+        except Exception as e:
+            st.error(f"ZIP failed: {e}")
+
+    with c2:
+        if st.button("Save folder to disk", key=f"save_disk_{kid}", help=f"Copies into {export_root}"):
+            try:
+                dest = install_pack_to_folder(folder, export_root, pack_label=pack_label)
+                st.session_state["last_saved_path"] = dest
+                st.success(f"Saved to `{dest}`")
+            except Exception as e:
+                st.error(str(e))
+
+    with c3:
+        last = st.session_state.get("last_saved_path")
+        if last and os.path.isdir(last):
+            if st.button("Open folder", key=f"open_{kid}"):
+                open_folder_in_finder(last)
+        elif os.path.isdir(export_root):
+            if st.button("Open exports folder", key=f"open_root_{kid}"):
+                open_folder_in_finder(export_root)
+
+    st.caption(f"Local save location: `{export_root}` (change in sidebar)")
+
+    images = list_image_files(folder)
+    if images:
+        st.markdown("**Download individual images**")
+        dcols = st.columns(min(4, len(images)))
+        for i, img_path in enumerate(images):
+            with dcols[i % len(dcols)]:
+                with open(img_path, "rb") as f:
+                    st.download_button(
+                        label=os.path.basename(img_path),
+                        data=f.read(),
+                        file_name=os.path.basename(img_path),
+                        mime="image/jpeg",
+                        key=f"dl_{kid}_{os.path.basename(img_path)}",
+                    )
+
+    text_files = [
+        f for f in list_pack_files(folder)
+        if f.endswith((".json", ".txt"))
+    ]
+    if text_files:
+        with st.expander("Download captions & metadata files"):
+            for tf in text_files:
+                with open(tf, "rb") as f:
+                    st.download_button(
+                        os.path.basename(tf),
+                        data=f.read(),
+                        file_name=os.path.basename(tf),
+                        key=f"dltxt_{kid}_{os.path.basename(tf)}",
+                    )
 
 
 def render_content_cards(content: dict):
@@ -240,6 +332,9 @@ def render_artwork_review(artwork_id: int):
                     with cc[i % len(cc)]:
                         st.image(img_path, caption=os.path.basename(img_path))
 
+        label = artwork.metadata.title or os.path.splitext(artwork.filename)[0]
+        render_save_and_download(folder, pack_label=label, key_suffix=str(artwork_id))
+
     st.divider()
     st.subheader("Approval")
     rev_notes = st.text_area("Revision notes", key=f"rev_{artwork_id}", height=80)
@@ -359,6 +454,23 @@ def page_batch_studio():
         st.success(f"Finished {ok}/{len(results)} artworks.")
         st.session_state["batch_results"] = results
 
+        if st.session_state.get("auto_save_exports", True):
+            export_root = get_export_folder()
+            saved_paths = []
+            for r in results:
+                if r.get("ok") and r.get("output_folder"):
+                    label = (r.get("metadata") or {}).get("title") or r.get("filename", "artwork")
+                    try:
+                        dest = install_pack_to_folder(
+                            r["output_folder"], export_root, pack_label=label
+                        )
+                        saved_paths.append(dest)
+                    except Exception:
+                        pass
+            if saved_paths:
+                st.success(f"Auto-saved {len(saved_paths)} pack(s) to `{export_root}`")
+                st.session_state["last_saved_path"] = export_root
+
     if st.session_state.get("batch_results"):
         st.subheader("Batch results")
         for r in st.session_state["batch_results"]:
@@ -379,6 +491,9 @@ def page_batch_studio():
                         if os.path.exists(p):
                             with icols[j % 3]:
                                 st.image(p, caption=os.path.basename(p))
+                if r.get("output_folder"):
+                    label = (r.get("metadata") or {}).get("title") or r.get("filename", "artwork")
+                    render_save_and_download(r["output_folder"], pack_label=label)
 
 
 def page_upload():
@@ -452,6 +567,23 @@ def sidebar_settings():
             ]
             save_user_examples({"example_captions": caps, "example_hashtags": tags})
             st.success("Saved")
+
+    st.divider()
+    st.markdown("### Save to your Mac")
+    export_path = st.text_input(
+        "Folder on this computer",
+        value=st.session_state.get("export_folder", DEFAULT_EXPORT_DIR),
+        help="Processed images are copied here when you click Save folder to disk",
+        key="export_folder_input",
+    )
+    st.session_state["export_folder"] = export_path
+    st.session_state["auto_save_exports"] = st.checkbox(
+        "Auto-save packs after batch AI prep",
+        value=st.session_state.get("auto_save_exports", True),
+    )
+    if st.button("Create exports folder"):
+        os.makedirs(get_export_folder(), exist_ok=True)
+        st.success(f"Ready: `{get_export_folder()}`")
 
 
 def main():

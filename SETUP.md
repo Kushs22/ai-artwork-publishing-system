@@ -51,9 +51,20 @@ Your browser opens the dashboard.
 5. **Generate content pack** — AI captions + `content.json` + Gelato section + platform checklist
 6. **Generate & export crops** — only when you are ready (or crops run on **Approve**)
 7. **Approve / Revise / Reject** — human gate before treating a pack as final
-8. **Manual posting** — copy assets and text to Instagram, Pinterest, Squarespace, Gelato, website yourself
+8. **Save to your computer** — download ZIP, save to `~/Desktop/ArtFlow Exports`, or open in Finder
+9. **Manual posting** — copy assets and text to Instagram, Pinterest, Squarespace, Gelato, website yourself
 
-## 6. Folders
+## 6. Save edited images on your Mac
+
+After AI prep, use **Save to your computer**:
+
+- **Download ZIP** — browser download (works on iPad too)
+- **Save folder to disk** — copies crops + captions into the folder in the sidebar (default: Desktop/ArtFlow Exports)
+- **Open folder** — opens that folder in Finder
+
+Enable **Auto-save packs after batch AI prep** in the sidebar to copy every batch automatically.
+
+## 7. Folders
 
 | Folder / file   | Purpose                                      |
 |-----------------|----------------------------------------------|
@@ -61,12 +72,12 @@ Your browser opens the dashboard.
 | `outputs/`      | Generated packs per artwork                  |
 | `artflow.db`    | Catalogue and approval state                 |
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 - **No AI captions:** check `GEMINI_API_KEY` in terminal or secrets
 - **Import errors:** re-run `pip install -r requirements.txt` inside your venv
 - **Reset catalogue:** stop app, delete `artflow.db` (uploads/ outputs/ stay)
 
-## Privacy
+## 9. Privacy
 
 See [PRIVACY.md](PRIVACY.md) for UK GDPR notes.
