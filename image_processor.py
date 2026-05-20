@@ -1,18 +1,21 @@
+from io import BytesIO
+from typing import Optional
+
 from PIL import Image
 import os
 
 
 class ImageProcessor:
-    def __init__(self):
-        self.sizes = {
-            "instagram_square": (1080, 1080),
-            "instagram_portrait": (1080, 1350),
-            "pinterest_vertical": (1000, 1500),
-            "website_thumbnail": (1200, 800),
-            "website_product": (1600, 1200)
-        }
+    SIZES = {
+        "instagram_square": (1080, 1080),
+        "instagram_portrait": (1080, 1350),
+        "pinterest_vertical": (1000, 1500),
+        "website_thumbnail": (1200, 800),
+        "website_product": (1600, 1200),
+        "gelato_print": (2400, 3000),
+    }
 
-    def crop_to_fill(self, img, target_size):
+    def crop_to_fill(self, img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
         target_w, target_h = target_size
         img_w, img_h = img.size
 
@@ -30,18 +33,38 @@ class ImageProcessor:
 
         return img.resize(target_size, Image.LANCZOS)
 
-    def process_images(self, image_path, output_folder):
-        os.makedirs(output_folder, exist_ok=True)
-
+    def preview_crops(
+        self,
+        image_path: str,
+        sizes: Optional[dict[str, tuple[int, int]]] = None,
+    ) -> dict[str, Image.Image]:
+        """Return in-memory crop previews — does not write files."""
         img = Image.open(image_path).convert("RGB")
+        size_map = sizes or self.SIZES
+        return {name: self.crop_to_fill(img.copy(), size) for name, size in size_map.items()}
+
+    def preview_to_bytes(self, previews: dict[str, Image.Image]) -> dict[str, bytes]:
+        result = {}
+        for name, img in previews.items():
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            result[name] = buf.getvalue()
+        return result
+
+    def apply_crops(
+        self,
+        image_path: str,
+        output_folder: str,
+        sizes: Optional[dict[str, tuple[int, int]]] = None,
+    ) -> list[str]:
+        """Write cropped files to output_folder."""
+        os.makedirs(output_folder, exist_ok=True)
+        previews = self.preview_crops(image_path, sizes)
         generated_files = []
 
-        for name, size in self.sizes.items():
-            cropped = self.crop_to_fill(img, size)
-
+        for name, cropped in previews.items():
             output_path = os.path.join(output_folder, f"{name}.jpg")
             cropped.save(output_path, quality=95)
-
             generated_files.append(output_path)
 
         return generated_files

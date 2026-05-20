@@ -88,11 +88,21 @@ This helps preserve:
 
 ---
 
+# Phase 1 (current)
+
+- SQLite catalogue (`artflow.db`) with approval statuses
+- Metadata form (title, theme, collection, format, platforms)
+- Crop preview before export; crops on explicit export or approve
+- Structured `content.json` with Gelato copy and `platform_checklist.json`
+- Human Approve / Revise / Reject workflow
+- Setup: [SETUP.md](SETUP.md) · Privacy: [PRIVACY.md](PRIVACY.md)
+
+No Dropbox OAuth, auto-posting, or folder watch in Phase 1.
+
 # Future Improvements
 
 - Multi-user support
-- AI-based artwork tagging
+- Dropbox integration
 - Scheduling integrations
-- Social media publishing APIs
-- Vector database memory for brand consistency
-- Advanced recommendation workflows
+- Social media publishing APIs (with explicit consent)
+- Folder watch (watchdog)

@@ -1,5 +1,8 @@
 __pycache__/
 .env
+.streamlit/secrets.toml
 uploads/
 outputs/
+artflow.db
 *.pyc
+.venv/
