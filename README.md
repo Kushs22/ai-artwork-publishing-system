@@ -1,9 +1,16 @@
 # ArtFlow AI
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-artflow--bark--grain.streamlit.app-FF4B4B?logo=streamlit&logoColor=white)](https://artflow-bark-grain.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![Gemini](https://img.shields.io/badge/Google-Gemini%20Flash-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Live app:** [https://artflow-bark-grain.streamlit.app](https://artflow-bark-grain.streamlit.app/)
+
 **Multimodal AI publishing assistant for independent artists** — built for real SME workflows (Bark & Grain Studio, Bristol).
+
+**MSc AI @ UWE Bristol** · Hackathon delivery for [Roxy Megyesi](https://www.roxymegyesi.com/) · Bark & Grain Studio
 
 Upload artwork → AI analyses each image → generates **title, theme, platform captions, hashtags, and cropped assets** for Instagram, Pinterest, Squarespace, Gelato, and web — with **human approval** before anything goes live.
 
@@ -186,12 +193,13 @@ Detailed setup: [SETUP.md](SETUP.md) · Privacy (UK): [PRIVACY.md](PRIVACY.md)
 
 ---
 
-## Deploy on Streamlit Cloud
+## Live deployment
 
-1. Go to [share.streamlit.io](https://share.streamlit.io)  
-2. Connect repo `Kushs22/ai-artwork-publishing-system`  
-3. Main file: `app.py`  
-4. Add secret `GEMINI_API_KEY` in app settings  
+**Production demo:** [artflow-bark-grain.streamlit.app](https://artflow-bark-grain.streamlit.app)
+
+Hosted on Streamlit Community Cloud. Add `GEMINI_API_KEY` in app **Settings → Secrets** on [share.streamlit.io](https://share.streamlit.io).
+
+To redeploy after code changes: push to `main` → Streamlit rebuilds automatically.
 
 ---
 
@@ -208,9 +216,11 @@ ai-artwork-publishing-system/
 │   └── roxy_bark_grain.json
 ├── db.py / approval.py    # Catalogue + workflow
 ├── metadata_utils.py      # AI → metadata merge
+├── export_utils.py        # ZIP download + save to local folder
 ├── ui_theme.py            # Custom styling
 ├── images/                # README screenshots
 ├── SETUP.md
+├── ROXY_QUICK_START.md    # Client handout (1 page)
 └── PRIVACY.md
 ```
 
@@ -242,9 +252,13 @@ Built against a **Bark & Grain Studio** publishing brief:
 
 ## Author
 
-**Kush Sharma** — MSc AI, UWE Bristol
+**Kush Sharma** — MSc AI, UWE Bristol · BEng Electrical Engineering, Thapar University
 
-**Portfolio narrative:** Hackathon → local Bristol SME → multimodal AI workflow with responsible human-in-the-loop design.
+- **GitHub:** [Kushs22/ai-artwork-publishing-system](https://github.com/Kushs22/ai-artwork-publishing-system)
+- **Live demo:** [artflow-bark-grain.streamlit.app](https://artflow-bark-grain.streamlit.app)
+- **Client:** [roxymegyesi.com](https://www.roxymegyesi.com/)
+
+**Portfolio narrative:** Hackathon → Bristol SME → multimodal AI workflow with responsible human-in-the-loop design.
 
 ---
 
