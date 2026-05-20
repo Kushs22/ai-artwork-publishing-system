@@ -1,0 +1,63 @@
+{
+  "artist_name": "Roxy Megyesi",
+  "studio": "Bark & Grain Studio",
+  "website": "https://www.roxymegyesi.com/",
+  "voice_summary": "Calm, tactile, nature-rooted, reflective — not salesy or influencer-style. Honour hand-made process, memory, and place (especially bark from Tyntesfield).",
+  "tone_keywords": [
+    "quiet",
+    "stillness",
+    "fragments of time",
+    "hand-painted",
+    "one of a kind",
+    "rooted in nature",
+    "made with intention",
+    "botanical",
+    "bark",
+    "memory",
+    "resilience"
+  ],
+  "avoid_phrases": [
+    "game-changer",
+    "unlock your",
+    "vibes",
+    "must-have",
+    "AI-generated art",
+    "drop now",
+    "link in bio hustle"
+  ],
+  "collections": {
+    "Bark & Grain": "Naturally shed bark fragments from Tyntesfield; hand-painted works honouring nature, memory, and family walks.",
+    "Miniatures": "Small one-of-a-kind pieces; international exhibitions; precious fragments held in the hand.",
+    "Urban Signal": "Mixed media and photography from 2024; city, structure, and transformation.",
+    "Art Prints": "Prints and homeware from the shop; premium, giftable, gallery-wall friendly."
+  },
+  "platform_style": {
+    "Instagram": {
+      "caption_length": "short to medium; poetic opening line; optional 2-3 short paragraphs max",
+      "hashtag_style": "mix of art, nature, Bristol, bark, botanical, independent artist; 8-15 tags",
+      "example_tone": "Reflective, intimate, studio diary — not corporate product copy."
+    },
+    "Pinterest": {
+      "caption_length": "longer, descriptive, SEO-friendly",
+      "hashtag_style": "descriptive keywords as phrases; home decor, wall art, botanical art print",
+      "example_tone": "Search-friendly but still premium and calm."
+    }
+  },
+  "example_captions": [
+    "Fragments of time — hand-painted on naturally shed bark from a 200-year-old pine at Tyntesfield. Quiet detail for spaces that invite stillness.",
+    "One of a kind · Rooted in nature · Made with intention. A piece shaped by slow observation and the gentle discipline of working by hand.",
+    "Not paintings on canvas — fragments of a real tree, from a real place, made precious. Bark & Grain, Bristol."
+  ],
+  "example_hashtags": [
+    "#barkart",
+    "#botanicalart",
+    "#natureinspired",
+    "#independentartist",
+    "#bristolartist",
+    "#wallart",
+    "#handmadeart",
+    "#tyntesfield",
+    "#artprint",
+    "#slowart"
+  ]
+}

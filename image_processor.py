@@ -37,10 +37,13 @@ class ImageProcessor:
         self,
         image_path: str,
         sizes: Optional[dict[str, tuple[int, int]]] = None,
+        crop_names: Optional[list[str]] = None,
     ) -> dict[str, Image.Image]:
         """Return in-memory crop previews — does not write files."""
         img = Image.open(image_path).convert("RGB")
         size_map = sizes or self.SIZES
+        if crop_names:
+            size_map = {k: v for k, v in size_map.items() if k in crop_names}
         return {name: self.crop_to_fill(img.copy(), size) for name, size in size_map.items()}
 
     def preview_to_bytes(self, previews: dict[str, Image.Image]) -> dict[str, bytes]:
@@ -56,10 +59,13 @@ class ImageProcessor:
         image_path: str,
         output_folder: str,
         sizes: Optional[dict[str, tuple[int, int]]] = None,
+        crop_names: Optional[list[str]] = None,
     ) -> list[str]:
-        """Write cropped files to output_folder."""
+        """Write cropped files to output_folder. Optional crop_names limits exports."""
         os.makedirs(output_folder, exist_ok=True)
         previews = self.preview_crops(image_path, sizes)
+        if crop_names:
+            previews = {k: v for k, v in previews.items() if k in crop_names}
         generated_files = []
 
         for name, cropped in previews.items():

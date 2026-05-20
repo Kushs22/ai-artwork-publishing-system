@@ -20,7 +20,10 @@ from db import (
 )
 from image_processor import ImageProcessor
 from models import ArtworkMetadata, ArtworkStatus, PLATFORM_OPTIONS
+from brand_voice import crops_for_platforms, load_user_examples, save_user_examples
 from publishing_agent import PublishingAgent
+
+DEFAULT_WEBSITE = "https://www.roxymegyesi.com/"
 
 
 def get_api_key() -> str | None:
@@ -54,7 +57,16 @@ def metadata_form(artwork, key_prefix: str) -> ArtworkMetadata:
     st.markdown("#### Artwork metadata")
     title = st.text_input("Title", value=meta.title, key=f"{key_prefix}_title")
     theme = st.text_input("Theme", value=meta.theme, key=f"{key_prefix}_theme")
-    collection = st.text_input("Collection", value=meta.collection, key=f"{key_prefix}_collection")
+    collection_options = ["", "Bark & Grain", "Miniatures", "Urban Signal", "Art Prints", "Other"]
+    coll_index = collection_options.index(meta.collection) if meta.collection in collection_options else 0
+    collection = st.selectbox(
+        "Collection",
+        collection_options,
+        index=coll_index,
+        key=f"{key_prefix}_collection",
+    )
+    if collection == "Other":
+        collection = st.text_input("Collection name", value=meta.collection, key=f"{key_prefix}_collection_other")
     fmt = st.text_input("Format (e.g. A3 print, square)", value=meta.format, key=f"{key_prefix}_format")
     website = st.text_input(
         "Client website (brand context)",
@@ -99,7 +111,8 @@ def render_artwork_review(artwork_id: int):
 
     with st.expander("Crop preview (no files written until export or approve)"):
         if st.button("Load crop previews", key=f"preview_{artwork_id}"):
-            previews = processor.preview_crops(upload_path)
+            crop_names = crops_for_platforms(meta.platforms) if meta.platforms else None
+            previews = processor.preview_crops(upload_path, crop_names=crop_names)
             preview_cols = st.columns(2)
             preview_bytes = processor.preview_to_bytes(previews)
             for idx, (name, img_bytes) in enumerate(preview_bytes.items()):
@@ -278,6 +291,35 @@ def main():
             st.success("API key configured")
         else:
             st.info("No API key — fallback captions will be used.")
+
+        with st.expander("Train brand voice (Roxy examples)"):
+            st.caption(
+                "Paste 2–5 real captions/hashtags from her Instagram or shop posts. "
+                "The AI will match this style for each new artwork (not copy verbatim)."
+            )
+            user_ex = load_user_examples()
+            ex_caps = st.text_area(
+                "Example captions (one per line)",
+                value="\n".join(user_ex.get("example_captions", [])),
+                height=120,
+            )
+            ex_tags = st.text_area(
+                "Example hashtags (space- or line-separated)",
+                value=" ".join(user_ex.get("example_hashtags", [])),
+                height=60,
+            )
+            if st.button("Save brand examples"):
+                caps = [ln.strip() for ln in ex_caps.splitlines() if ln.strip()]
+                tags = []
+                for part in ex_tags.replace("\n", " ").split():
+                    t = part.strip()
+                    if t:
+                        tags.append(t if t.startswith("#") else f"#{t.lstrip('#')}")
+                save_user_examples({
+                    "example_captions": caps,
+                    "example_hashtags": tags,
+                })
+                st.success("Saved — used on next Generate.")
 
         page = st.radio(
             "Navigation",

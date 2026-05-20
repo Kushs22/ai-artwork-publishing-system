@@ -33,7 +33,7 @@ class ArtworkMetadata:
     collection: str = ""
     format: str = ""
     platforms: list[str] = field(default_factory=list)
-    website: str = ""
+    website: str = "https://www.roxymegyesi.com/"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -3,6 +3,7 @@
 import os
 from typing import Optional
 
+from brand_voice import crops_for_platforms
 from db import get_artwork, update_artwork
 from image_processor import ImageProcessor
 from models import Artwork, ArtworkStatus
@@ -37,7 +38,10 @@ def approve_artwork(artwork_id: int, *, apply_crops: bool = True) -> Optional[Ar
     if apply_crops and artwork.output_path:
         master = artwork.upload_path
         if os.path.isfile(master):
-            ImageProcessor().apply_crops(master, artwork.output_path)
+            crop_names = crops_for_platforms(artwork.metadata.platforms)
+            ImageProcessor().apply_crops(
+                master, artwork.output_path, crop_names=crop_names or None
+            )
 
     return update_artwork(
         artwork_id,

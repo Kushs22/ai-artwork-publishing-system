@@ -8,6 +8,12 @@ import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 
+from brand_voice import (
+    build_brand_context_block,
+    crops_for_platforms,
+    load_brand_profile,
+    load_user_examples,
+)
 from image_processor import ImageProcessor
 
 
@@ -104,7 +110,13 @@ class PublishingAgent:
         revision_notes: Optional[str] = None,
     ) -> str:
         meta = brand_context.get("metadata", {})
-        platforms = ", ".join(meta.get("platforms", [])) or "Instagram, Pinterest, Website"
+        platforms = meta.get("platforms", []) or ["Instagram", "Pinterest", "Website"]
+        platforms_str = ", ".join(platforms)
+
+        profile = load_brand_profile()
+        user_examples = load_user_examples()
+        brand_block = build_brand_context_block(profile, user_examples, meta)
+
         revision_block = ""
         if revision_notes:
             revision_block = f"""
@@ -112,51 +124,71 @@ REVISION REQUEST (address these changes):
 {revision_notes}
 """
 
+        platform_rules = """
+PLATFORM RULES (content must differ per platform — same artwork, different copy):
+- Instagram: Short poetic caption (1-3 lines) + separate longer caption for carousel/story depth.
+  Hashtags: 8-15, mix artist + nature + Bristol/bark + decor; match example style.
+- Pinterest: Longer descriptive pin text (SEO: botanical art print, wall art, bark art, gift).
+  Use keyword phrases; calmer than Instagram, more searchable.
+- Squarespace/Website: Premium product listing; title, materials, one-of-a-kind or print options.
+- Gelato: Practical POD title, description (sizes, paper, framing, gifts), 5-8 product tags.
+"""
+        if "Instagram" not in platforms:
+            platform_rules += "\n- Omit or minimise Instagram fields if not in target platforms."
+        if "Pinterest" not in platforms:
+            platform_rules += "\n- Omit or minimise Pinterest fields if not in target platforms."
+
         return f"""
-You are an expert art brand strategist and social media copywriter for independent artists.
+You are an expert art brand strategist for Roxy Megyesi / Bark & Grain Studio (Bristol).
 
 Analyse BOTH:
-1. The uploaded artwork image
-2. The website brand identity text below
+1. The uploaded artwork image (colours, texture, subject, mood — this post is UNIQUE)
+2. Brand voice + website context below
 
-WEBSITE CONTEXT:
-{website_context}
+BRAND VOICE (match example captions — vary wording for THIS image):
+{brand_block}
+
+WEBSITE TEXT (roxymegyesi.com):
+{website_context[:3500]}
 
 ARTWORK METADATA:
 - Title: {meta.get('title', '')}
-- Theme / collection: {meta.get('theme', '')} / {meta.get('collection', '')}
-- Format: {meta.get('format', 'Both')}
-- Target platforms: {platforms}
+- Theme: {meta.get('theme', '')}
+- Collection: {meta.get('collection', '')}
+- Format: {meta.get('format', '')}
+- Target platforms: {platforms_str}
 {revision_block}
+{platform_rules}
+
 TASK:
-Generate unique, platform-ready content for this specific image.
-Return valid JSON only (no markdown fences) with this exact structure:
+Generate fresh captions and hashtags for THIS specific upload — not generic templates.
+Return valid JSON only (no markdown fences):
 
 {{
-  "artwork_analysis": "string — subject, colours, texture, mood",
-  "brand_tone": ["3-5 bullet strings"],
-  "instagram_caption": "short poetic caption",
-  "instagram_long_caption": "longer storytelling caption",
-  "pinterest_description": "SEO-friendly description",
-  "website_product_listing": "premium product page copy",
-  "gelato_product_title": "print product title for Gelato POD",
-  "gelato_product_description": "Gelato marketplace description — materials, sizing, gift appeal",
-  "gelato_tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "hashtags": ["#tag1", "#tag2", "... up to 15"],
+  "artwork_analysis": "what you see in the image",
+  "brand_tone": ["3-5 tone words"],
+  "instagram_caption": "short caption for feed post",
+  "instagram_long_caption": "longer caption if needed",
+  "pinterest_description": "pin description with SEO keywords",
+  "website_product_listing": "Squarespace-style product copy",
+  "gelato_product_title": "POD product title",
+  "gelato_product_description": "Gelato listing body",
+  "gelato_tags": ["tag1", "tag2"],
+  "hashtags": ["#tag1", "... tailored to this piece and collection"],
+  "pinterest_keywords": ["keyword1", "keyword2"],
   "platform_notes": {{
-    "instagram": "posting tip",
-    "pinterest": "pin tip",
+    "instagram": "which crop: square vs portrait",
+    "pinterest": "vertical pin tip",
     "squarespace": "listing tip",
-    "gelato": "POD listing tip",
-    "website": "onsite tip"
+    "gelato": "POD tip"
   }}
 }}
 
 Rules:
-- Match website tone; use visible image details.
-- Gelato copy must be practical for print-on-demand (materials, framing, gifts).
-- Avoid generic AI language and invented personal backstory.
-- Do not suggest auto-posting; content is for human review only.
+- Captions and hashtags MUST reflect visible details in the image and collection metadata.
+- Sound like Bark & Grain: tactile, quiet, nature, intention — never influencer hype.
+- Do not invent medical or personal trauma narratives unless clearly supported by metadata.
+- Human reviews all copy before posting; do not mention auto-posting.
 """
 
     def _parse_json_response(self, text: str, fallback: dict) -> dict[str, Any]:
@@ -295,7 +327,12 @@ Rules:
 
         generated_images = []
         if include_crops:
-            generated_images = self.image_processor.apply_crops(image_path, output_folder)
+            meta = (brand_context or {}).get("metadata", {})
+            platform_list = meta.get("platforms", [])
+            crop_names = crops_for_platforms(platform_list) if platform_list else None
+            generated_images = self.image_processor.apply_crops(
+                image_path, output_folder, crop_names=crop_names
+            )
 
         content = self.generate_content_pack(image_path, brand_context, revision_notes)
         content_file = self.write_content_json(output_folder, content)
