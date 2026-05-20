@@ -10,6 +10,7 @@ from approval import (
     status_badge_html,
     submit_for_review,
 )
+from batch_processor import process_artwork, process_batch, list_draft_artwork_ids
 from db import (
     catalogue_summary,
     create_artwork,
@@ -22,6 +23,7 @@ from image_processor import ImageProcessor
 from models import ArtworkMetadata, ArtworkStatus, PLATFORM_OPTIONS
 from brand_voice import crops_for_platforms, load_user_examples, save_user_examples
 from publishing_agent import PublishingAgent
+from ui_theme import inject_theme, hero
 
 DEFAULT_WEBSITE = "https://www.roxymegyesi.com/"
 
@@ -39,7 +41,7 @@ def get_api_key() -> str | None:
     return manual.strip() or None
 
 
-def save_uploads(uploaded_files) -> list[str]:
+def save_uploads(uploaded_files, shared_meta: ArtworkMetadata | None = None) -> list[str]:
     os.makedirs("uploads", exist_ok=True)
     saved = []
     for uploaded_file in uploaded_files:
@@ -47,43 +49,88 @@ def save_uploads(uploaded_files) -> list[str]:
         if not os.path.exists(path):
             with open(path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-        create_artwork(uploaded_file.name)
+        meta = shared_meta or ArtworkMetadata(website=DEFAULT_WEBSITE)
+        create_artwork(uploaded_file.name, metadata=meta)
         saved.append(uploaded_file.name)
     return saved
+
+
+def shared_metadata_form(key_prefix: str = "shared") -> ArtworkMetadata:
+    st.markdown('<p class="section-tag">Batch settings (applied to all new uploads)</p>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        collection_options = ["Bark & Grain", "Miniatures", "Urban Signal", "Art Prints", "Other"]
+        collection = st.selectbox("Collection", collection_options, key=f"{key_prefix}_coll")
+        theme = st.text_input("Theme / mood", key=f"{key_prefix}_theme", placeholder="e.g. winter bark, quiet detail")
+    with c2:
+        fmt = st.text_input("Format", key=f"{key_prefix}_format", placeholder="e.g. A3 print, miniature")
+        website = st.text_input("Brand website", value=DEFAULT_WEBSITE, key=f"{key_prefix}_web")
+
+    st.markdown("**Platforms**")
+    pcols = st.columns(len(PLATFORM_OPTIONS))
+    platforms = []
+    default_plat = ["Instagram", "Pinterest"]
+    for i, platform in enumerate(PLATFORM_OPTIONS):
+        with pcols[i]:
+            if st.checkbox(
+                platform,
+                value=platform in default_plat,
+                key=f"{key_prefix}_p_{platform}",
+            ):
+                platforms.append(platform)
+
+    return ArtworkMetadata(
+        title="",
+        theme=theme,
+        collection=collection if collection != "Other" else "",
+        format=fmt,
+        platforms=platforms,
+        website=website or DEFAULT_WEBSITE,
+    )
 
 
 def metadata_form(artwork, key_prefix: str) -> ArtworkMetadata:
     meta = artwork.metadata
     st.markdown("#### Artwork metadata")
-    title = st.text_input("Title", value=meta.title, key=f"{key_prefix}_title")
+    title = st.text_input("Title", value=meta.title or os.path.splitext(artwork.filename)[0], key=f"{key_prefix}_title")
     theme = st.text_input("Theme", value=meta.theme, key=f"{key_prefix}_theme")
     collection_options = ["", "Bark & Grain", "Miniatures", "Urban Signal", "Art Prints", "Other"]
     coll_index = collection_options.index(meta.collection) if meta.collection in collection_options else 0
-    collection = st.selectbox(
-        "Collection",
-        collection_options,
-        index=coll_index,
-        key=f"{key_prefix}_collection",
-    )
+    collection = st.selectbox("Collection", collection_options, index=coll_index, key=f"{key_prefix}_collection")
     if collection == "Other":
         collection = st.text_input("Collection name", value=meta.collection, key=f"{key_prefix}_collection_other")
-    fmt = st.text_input("Format (e.g. A3 print, square)", value=meta.format, key=f"{key_prefix}_format")
+    fmt = st.text_input("Format", value=meta.format, key=f"{key_prefix}_format")
     website = st.text_input(
-        "Client website (brand context)",
-        value=meta.website,
-        placeholder="https://www.example.com/",
+        "Client website",
+        value=meta.website or DEFAULT_WEBSITE,
         key=f"{key_prefix}_website",
     )
-    st.markdown("**Platforms** (manual posting — no auto-post)")
+    st.markdown("**Platforms**")
     platforms = []
     cols = st.columns(len(PLATFORM_OPTIONS))
     for i, platform in enumerate(PLATFORM_OPTIONS):
         with cols[i]:
-            if st.checkbox(platform, value=platform in meta.platforms, key=f"{key_prefix}_plat_{platform}"):
+            if st.checkbox(platform, value=platform in (meta.platforms or ["Instagram", "Pinterest"]), key=f"{key_prefix}_plat_{platform}"):
                 platforms.append(platform)
     return ArtworkMetadata(
         title=title, theme=theme, collection=collection, format=fmt, platforms=platforms, website=website
     )
+
+
+def render_content_cards(content: dict):
+    if content.get("instagram_caption"):
+        st.markdown("**Instagram (short)**")
+        st.info(content["instagram_caption"])
+    if content.get("instagram_long_caption"):
+        st.markdown("**Instagram (long)**")
+        st.write(content["instagram_long_caption"])
+    if content.get("pinterest_description"):
+        st.markdown("**Pinterest**")
+        st.write(content["pinterest_description"])
+    tags = content.get("hashtags", [])
+    if tags:
+        st.markdown("**Hashtags**")
+        st.code(" ".join(tags) if isinstance(tags, list) else str(tags))
 
 
 def render_artwork_review(artwork_id: int):
@@ -93,255 +140,310 @@ def render_artwork_review(artwork_id: int):
         return
 
     st.markdown(status_badge_html(artwork.status), unsafe_allow_html=True)
-    st.caption(f"File: `{artwork.filename}` · ID {artwork.id}")
+    st.caption(f"`{artwork.filename}` · ID {artwork.id}")
 
     upload_path = artwork.upload_path
     if not os.path.exists(upload_path):
-        st.warning("Master file missing from uploads/. Re-upload to continue.")
+        st.warning("Master file missing. Re-upload to continue.")
         return
 
-    st.image(upload_path, caption=artwork.filename, width=400)
+    col_img, col_meta = st.columns([1, 1.2])
+    with col_img:
+        st.image(upload_path, caption=artwork.filename, width=360)
 
-    meta = metadata_form(artwork, f"review_{artwork_id}")
-    if st.button("Save metadata", key=f"save_meta_{artwork_id}"):
-        update_artwork(artwork_id, metadata=meta)
-        st.success("Metadata saved.")
+    with col_meta:
+        meta = metadata_form(artwork, f"review_{artwork_id}")
+        if st.button("Save metadata", key=f"save_meta_{artwork_id}"):
+            update_artwork(artwork_id, metadata=meta)
+            st.success("Saved.")
 
     processor = ImageProcessor()
-
-    with st.expander("Crop preview (no files written until export or approve)"):
-        if st.button("Load crop previews", key=f"preview_{artwork_id}"):
+    with st.expander("Crop preview", expanded=False):
+        if st.button("Load previews", key=f"preview_{artwork_id}"):
             crop_names = crops_for_platforms(meta.platforms) if meta.platforms else None
             previews = processor.preview_crops(upload_path, crop_names=crop_names)
-            preview_cols = st.columns(2)
             preview_bytes = processor.preview_to_bytes(previews)
+            pcols = st.columns(3)
             for idx, (name, img_bytes) in enumerate(preview_bytes.items()):
-                with preview_cols[idx % 2]:
-                    st.image(img_bytes, caption=name.replace("_", " "), use_container_width=True)
+                with pcols[idx % 3]:
+                    st.image(img_bytes, caption=name.replace("_", " "))
 
-    col_gen, col_crops = st.columns(2)
-    api_key = get_api_key()
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        generate = st.button("Generate captions", key=f"gen_{artwork_id}", type="primary")
+    with c2:
+        export_crops = st.button("Captions + export crops", key=f"crops_{artwork_id}")
+    with c3:
+        both = st.button("Full pack (copy + crops)", key=f"full_{artwork_id}")
 
-    with col_gen:
-        generate = st.button("Generate content pack", key=f"gen_{artwork_id}")
-    with col_crops:
-        export_crops = st.button("Generate & export crops", key=f"crops_{artwork_id}")
-
-    if generate or export_crops:
+    if generate or export_crops or both:
         update_artwork(artwork_id, metadata=meta)
-        agent = PublishingAgent(api_key)
-        revision = artwork.revision_notes if artwork.status == ArtworkStatus.NEEDS_REVISION.value else ""
-        if revision:
-            st.info("Regenerating with revision notes applied.")
-        brand_context = {"website": meta.website, "metadata": meta.to_dict()}
-        with st.spinner("Generating publishing pack..."):
-            result = agent.prepare_output_pack(
-                upload_path,
-                brand_context=brand_context,
-                revision_notes=revision or None,
-                include_crops=export_crops,
+        include_crops = export_crops or both
+        with st.spinner("Processing..."):
+            result = process_artwork(
+                artwork_id,
+                get_api_key(),
+                include_crops=include_crops,
+                metadata_override=meta,
             )
-        update_artwork(artwork_id, output_path=result["output_folder"])
-        submit_for_review(artwork_id)
-        st.session_state[f"last_result_{artwork_id}"] = result
-        st.success(f"Pack created: `{result['output_folder']}`")
+        if result.get("ok"):
+            st.session_state[f"last_result_{artwork_id}"] = result
+            st.success(f"Done → `{result['output_folder']}`")
+        else:
+            st.error(result.get("error", "Failed"))
 
     result = st.session_state.get(f"last_result_{artwork_id}")
-    if result or artwork.output_path:
-        folder = (result or {}).get("output_folder") or artwork.output_path
-        st.subheader("Output pack")
-        st.code(folder)
-
+    folder = (result or {}).get("output_folder") or artwork.output_path
+    if folder and os.path.isdir(folder):
         content_json = os.path.join(folder, "content.json")
         if os.path.exists(content_json):
             with open(content_json, encoding="utf-8") as f:
                 content = json.load(f)
-            st.json(content)
-            with st.expander("Gelato section"):
-                st.json({
-                    "product_title": content.get("gelato_product_title", ""),
-                    "product_description": content.get("gelato_product_description", ""),
-                    "tags": content.get("gelato_tags", []),
-                })
-            checklist_json = os.path.join(folder, "platform_checklist.json")
-            with st.expander("Platform checklist"):
-                if os.path.exists(checklist_json):
-                    with open(checklist_json, encoding="utf-8") as f:
-                        st.json(json.load(f))
-                else:
-                    st.caption("Generate a content pack to create the checklist.")
+            render_content_cards(content)
 
-        for img_path in (result or {}).get("generated_images", []):
-            if os.path.exists(img_path):
-                st.image(img_path, caption=os.path.basename(img_path), width=280)
+        crops = (result or {}).get("generated_images") or [
+            os.path.join(folder, f) for f in os.listdir(folder)
+            if f.endswith(".jpg") and not f.startswith("_")
+        ]
+        if crops:
+            st.markdown("**Exported sizes**")
+            cc = st.columns(min(4, len(crops)))
+            for i, img_path in enumerate(crops[:8]):
+                if os.path.exists(img_path):
+                    with cc[i % len(cc)]:
+                        st.image(img_path, caption=os.path.basename(img_path))
 
-        if not (result or {}).get("generated_images"):
-            crop_files = [
-                os.path.join(folder, f)
-                for f in os.listdir(folder)
-                if f.endswith(".jpg") and f != os.path.basename(upload_path)
-            ] if os.path.isdir(folder) else []
-            for img_path in crop_files:
-                st.image(img_path, caption=os.path.basename(img_path), width=280)
-
-    st.subheader("Human approval")
-    if artwork.revision_notes:
-        st.info(f"Revision notes: {artwork.revision_notes}")
-
-    rev_notes = st.text_area(
-        "Revision notes (required for Revise)",
-        key=f"rev_notes_{artwork_id}",
-        placeholder="e.g. Soften Instagram caption, emphasise botanical tones",
-    )
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("Approve", key=f"approve_{artwork_id}", type="primary"):
-            if not artwork.output_path and not result:
-                st.error("Generate a content pack before approving.")
-            else:
-                approved = approve_artwork(artwork_id, apply_crops=True)
-                if approved:
-                    st.success("Approved. Crops exported if not already present.")
-                    st.rerun()
-                else:
-                    st.error("Could not approve artwork.")
-    with c2:
-        if st.button("Revise", key=f"revise_{artwork_id}"):
-            if not rev_notes.strip():
-                st.error("Add revision notes before requesting a revision.")
-            else:
-                revise_artwork(artwork_id, rev_notes)
-                st.warning("Marked as needs revision. Regenerate content with notes saved.")
+    st.divider()
+    st.subheader("Approval")
+    rev_notes = st.text_area("Revision notes", key=f"rev_{artwork_id}", height=80)
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        if st.button("Approve", key=f"ap_{artwork_id}", type="primary"):
+            if approve_artwork(artwork_id, apply_crops=True):
+                st.success("Approved")
                 st.rerun()
-    with c3:
-        if st.button("Reject", key=f"reject_{artwork_id}"):
+    with a2:
+        if st.button("Revise", key=f"rv_{artwork_id}"):
+            if rev_notes.strip() and revise_artwork(artwork_id, rev_notes):
+                st.warning("Needs revision — regenerate with notes")
+                st.rerun()
+    with a3:
+        if st.button("Reject", key=f"rj_{artwork_id}"):
             reject_artwork(artwork_id)
-            st.error("Rejected.")
             st.rerun()
 
 
-def page_upload():
-    st.subheader("Upload artwork")
-    st.caption("Masters are saved to uploads/ and never modified or deleted by the app.")
+def page_batch_studio():
+    st.markdown('<p class="section-tag">Batch studio</p>', unsafe_allow_html=True)
+    st.subheader("Upload & process multiple artworks")
+    st.caption("Upload several pieces, set shared brand settings, then generate captions, hashtags, and platform crops for all at once.")
+
+    shared_meta = shared_metadata_form("batch")
 
     uploaded_files = st.file_uploader(
-        "Upload artwork images",
+        "Drop multiple artwork images (JPG / PNG)",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
+        help="Each file gets its own captions based on the image + settings below.",
     )
+
     if uploaded_files:
-        names = save_uploads(uploaded_files)
-        st.success(f"Saved {len(names)} file(s) to catalogue (draft). No crops generated yet.")
-        for name in names:
-            path = os.path.join("uploads", name)
-            st.image(path, caption=name, width=200)
+        names = save_uploads(uploaded_files, shared_meta)
+        st.success(f"Added {len(names)} artwork(s) to catalogue.")
+
+        st.markdown("**Upload preview**")
+        cols = st.columns(min(4, len(names)))
+        for i, name in enumerate(names):
+            with cols[i % len(cols)]:
+                st.image(os.path.join("uploads", name), caption=name)
+
+    drafts = list_draft_artwork_ids()
+    all_drafts = list_artworks(status=ArtworkStatus.DRAFT.value)
+
+    st.divider()
+    st.markdown(f"**{len(all_drafts)}** draft(s) ready to process")
+
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        process_all = st.button(
+            "Process all drafts (captions + hashtags + crops)",
+            type="primary",
+            disabled=len(drafts) == 0,
+        )
+    with b2:
+        captions_only = st.button("Captions only (no crop files)", disabled=len(drafts) == 0)
+    with b3:
+        apply_meta = st.button("Apply batch settings to all drafts", disabled=len(drafts) == 0)
+
+    if apply_meta and drafts:
+        for aid in drafts:
+            art = get_artwork(aid)
+            if art:
+                m = shared_meta
+                if not m.title:
+                    m.title = os.path.splitext(art.filename)[0].replace("_", " ").title()
+                update_artwork(aid, metadata=m)
+        st.success("Batch settings applied to all drafts.")
+        st.rerun()
+
+    if process_all or captions_only:
+        include_crops = process_all
+        progress = st.progress(0, text="Starting batch...")
+        results = []
+        for i, aid in enumerate(drafts):
+            art = get_artwork(aid)
+            meta = shared_meta
+            if art and not meta.title:
+                meta = ArtworkMetadata(
+                    title=os.path.splitext(art.filename)[0].replace("_", " ").title(),
+                    theme=shared_meta.theme,
+                    collection=shared_meta.collection,
+                    format=shared_meta.format,
+                    platforms=shared_meta.platforms,
+                    website=shared_meta.website,
+                )
+            progress.progress((i + 1) / len(drafts), text=f"Processing {i + 1}/{len(drafts)}...")
+            results.append(
+                process_artwork(aid, get_api_key(), include_crops=include_crops, metadata_override=meta)
+            )
+        progress.empty()
+        ok = sum(1 for r in results if r.get("ok"))
+        st.success(f"Finished {ok}/{len(results)} artworks.")
+        st.session_state["batch_results"] = results
+
+    if st.session_state.get("batch_results"):
+        st.subheader("Batch results")
+        for r in st.session_state["batch_results"]:
+            if not r.get("ok"):
+                st.error(f"{r.get('filename', r.get('artwork_id'))}: {r.get('error')}")
+                continue
+            with st.expander(f"✓ {r.get('filename', 'artwork')}", expanded=False):
+                render_content_cards(r.get("content", {}))
+                st.caption(r.get("output_folder", ""))
+                if r.get("generated_images"):
+                    icols = st.columns(3)
+                    for j, p in enumerate(r["generated_images"][:6]):
+                        if os.path.exists(p):
+                            with icols[j % 3]:
+                                st.image(p, caption=os.path.basename(p))
+
+
+def page_upload():
+    page_batch_studio()
 
 
 def page_catalogue():
-    st.subheader("Catalogue")
+    st.markdown('<p class="section-tag">Catalogue</p>', unsafe_allow_html=True)
     summary = catalogue_summary()
     if summary:
-        cols = st.columns(len(summary))
+        cols = st.columns(min(5, len(summary)))
         for i, (status, count) in enumerate(summary.items()):
             cols[i % len(cols)].metric(status.replace("_", " ").title(), count)
     else:
-        st.info("No artworks in catalogue yet. Upload images to begin.")
+        st.info("No artworks yet — use Batch Studio to upload.")
 
-    filter_status = st.selectbox(
-        "Filter by status",
-        ["All"] + ArtworkStatus.choices(),
-    )
+    filter_status = st.selectbox("Filter", ["All"] + ArtworkStatus.choices())
     status_filter = None if filter_status == "All" else filter_status
-    artworks = list_artworks(status=status_filter)
-
-    for art in artworks:
+    for art in list_artworks(status=status_filter):
         with st.container(border=True):
-            cols = st.columns([3, 1, 1])
-            with cols[0]:
+            c1, c2, c3, c4 = st.columns([1, 2.5, 1, 1])
+            thumb = art.upload_path
+            with c1:
+                if os.path.exists(thumb):
+                    st.image(thumb, width=72)
+            with c2:
                 st.markdown(f"**{art.metadata.title or art.filename}**")
                 st.caption(art.filename)
-            with cols[1]:
+            with c3:
                 st.markdown(status_badge_html(art.status), unsafe_allow_html=True)
-            with cols[2]:
-                if st.button("Open", key=f"open_{art.id}"):
+            with c4:
+                if st.button("Review", key=f"rev_open_{art.id}"):
                     st.session_state["review_id"] = art.id
                     st.session_state["page"] = "Review"
                     st.rerun()
 
 
+def sidebar_settings():
+    st.markdown("### Settings")
+    manual_key = st.text_input(
+        "Gemini API key",
+        type="password",
+        help="Or use .streamlit/secrets.toml",
+        key="manual_api_key",
+    )
+    if manual_key:
+        st.session_state["manual_api_key"] = manual_key
+    if get_api_key():
+        st.success("API connected")
+    else:
+        st.warning("Add API key for AI captions")
+
+    with st.expander("Brand voice training"):
+        user_ex = load_user_examples()
+        ex_caps = st.text_area(
+            "Example captions (one per line)",
+            value="\n".join(user_ex.get("example_captions", [])),
+            height=100,
+        )
+        ex_tags = st.text_area(
+            "Example hashtags",
+            value=" ".join(user_ex.get("example_hashtags", [])),
+            height=60,
+        )
+        if st.button("Save examples", use_container_width=True):
+            caps = [ln.strip() for ln in ex_caps.splitlines() if ln.strip()]
+            tags = [
+                t if t.startswith("#") else f"#{t.lstrip('#')}"
+                for t in ex_tags.replace("\n", " ").split()
+                if t.strip()
+            ]
+            save_user_examples({"example_captions": caps, "example_hashtags": tags})
+            st.success("Saved")
+
+
 def main():
-    st.set_page_config(page_title="ArtFlow AI", layout="wide")
+    st.set_page_config(
+        page_title="ArtFlow AI",
+        page_icon="🎨",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    inject_theme()
     init_db()
 
-    st.title("ArtFlow AI")
-    st.write("AI publishing assistant for independent artists — human approval required before publishing.")
-
     with st.sidebar:
-        st.header("Settings")
-        manual_key = st.text_input(
-            "Gemini API key (optional override)",
-            type="password",
-            help="Uses st.secrets GEMINI_API_KEY or env GEMINI_API_KEY first.",
-            key="manual_api_key",
-        )
-        if manual_key:
-            st.session_state["manual_api_key"] = manual_key
-        if get_api_key():
-            st.success("API key configured")
-        else:
-            st.info("No API key — fallback captions will be used.")
-
-        with st.expander("Train brand voice (Roxy examples)"):
-            st.caption(
-                "Paste 2–5 real captions/hashtags from her Instagram or shop posts. "
-                "The AI will match this style for each new artwork (not copy verbatim)."
-            )
-            user_ex = load_user_examples()
-            ex_caps = st.text_area(
-                "Example captions (one per line)",
-                value="\n".join(user_ex.get("example_captions", [])),
-                height=120,
-            )
-            ex_tags = st.text_area(
-                "Example hashtags (space- or line-separated)",
-                value=" ".join(user_ex.get("example_hashtags", [])),
-                height=60,
-            )
-            if st.button("Save brand examples"):
-                caps = [ln.strip() for ln in ex_caps.splitlines() if ln.strip()]
-                tags = []
-                for part in ex_tags.replace("\n", " ").split():
-                    t = part.strip()
-                    if t:
-                        tags.append(t if t.startswith("#") else f"#{t.lstrip('#')}")
-                save_user_examples({
-                    "example_captions": caps,
-                    "example_hashtags": tags,
-                })
-                st.success("Saved — used on next Generate.")
-
+        st.markdown("## ArtFlow")
+        st.caption("Bark & Grain Studio")
+        sidebar_settings()
+        st.divider()
+        pages = ["Batch Studio", "Catalogue", "Review"]
         page = st.radio(
-            "Navigation",
-            ["Upload", "Catalogue", "Review"],
-            index=["Upload", "Catalogue", "Review"].index(st.session_state.get("page", "Upload")),
+            "Navigate",
+            pages,
+            index=pages.index(st.session_state.get("page", "Batch Studio")),
             key="nav_page",
         )
         st.session_state["page"] = page
 
-    if st.session_state["page"] == "Upload":
-        page_upload()
-    elif st.session_state["page"] == "Catalogue":
+    hero(
+        "ArtFlow AI",
+        "Upload multiple artworks · crop for Instagram & Pinterest · unique captions & hashtags per image · human approval before publishing.",
+    )
+
+    current = st.session_state.get("page", "Batch Studio")
+    if current == "Batch Studio":
+        page_batch_studio()
+    elif current == "Catalogue":
         page_catalogue()
-    elif st.session_state["page"] == "Review":
+    elif current == "Review":
         artworks = list_artworks()
         if not artworks:
-            st.info("Upload artwork first.")
+            st.info("Upload in Batch Studio first.")
         else:
             ids = {f"{a.metadata.title or a.filename} ({a.status})": a.id for a in artworks}
-            default_id = st.session_state.get("review_id", artworks[0].id)
-            default_label = next((k for k, v in ids.items() if v == default_id), list(ids.keys())[0])
-            choice = st.selectbox("Select artwork", list(ids.keys()), index=list(ids.keys()).index(default_label))
+            rid = st.session_state.get("review_id", artworks[0].id)
+            label = next((k for k, v in ids.items() if v == rid), list(ids.keys())[0])
+            choice = st.selectbox("Artwork", list(ids.keys()), index=list(ids.keys()).index(label))
             render_artwork_review(ids[choice])
 
 
