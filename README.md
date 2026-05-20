@@ -242,7 +242,7 @@ Built against a **Bark & Grain Studio** publishing brief:
 
 ## Author
 
-**Kush Sharma** — MSc AI, UWE Bristol · BEng Electrical Engineering, Thapar University  
+**Kush Sharma** — MSc AI, UWE Bristol
 
 **Portfolio narrative:** Hackathon → local Bristol SME → multimodal AI workflow with responsible human-in-the-loop design.
 
