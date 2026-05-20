@@ -56,7 +56,12 @@ class PublishingAgent:
         meta = brand_context.get("metadata", {})
         title = meta.get("title") or artwork_name
 
+        stem = os.path.splitext(os.path.basename(image_path))[0].replace("_", " ").replace("-", " ")
         return {
+            "suggested_title": title if title != artwork_name else stem.title(),
+            "suggested_theme": "Botanical line and organic pattern",
+            "suggested_collection": meta.get("collection") or "Bark & Grain",
+            "suggested_format": meta.get("format") or "Art print",
             "artwork_analysis": (
                 "Calm, organic visual texture suitable for botanical-inspired art "
                 "and reflective social storytelling."
@@ -165,7 +170,11 @@ Generate fresh captions and hashtags for THIS specific upload — not generic te
 Return valid JSON only (no markdown fences):
 
 {{
-  "artwork_analysis": "what you see in the image",
+  "suggested_title": "poetic product/artwork title based ONLY on what you see",
+  "suggested_theme": "2-6 word mood/theme e.g. tropical line study, quiet bark detail",
+  "suggested_collection": "one of: Bark & Grain, Miniatures, Urban Signal, Art Prints — best fit",
+  "suggested_format": "e.g. original bark, A3 print, miniature, photography",
+  "artwork_analysis": "what you see in the image — colours, subject, technique",
   "brand_tone": ["3-5 tone words"],
   "instagram_caption": "short caption for feed post",
   "instagram_long_caption": "longer caption if needed",
@@ -185,6 +194,8 @@ Return valid JSON only (no markdown fences):
 }}
 
 Rules:
+- suggested_title, suggested_theme, suggested_collection MUST be derived from the image (not generic).
+- If user left title/theme empty, you MUST fill suggested_* fields from visual analysis.
 - Captions and hashtags MUST reflect visible details in the image and collection metadata.
 - Sound like Bark & Grain: tactile, quiet, nature, intention — never influencer hype.
 - Do not invent medical or personal trauma narratives unless clearly supported by metadata.

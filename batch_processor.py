@@ -3,6 +3,7 @@
 from typing import Any, Optional
 
 from db import get_artwork, list_artworks, update_artwork
+from metadata_utils import ensure_auto_platforms, metadata_from_ai
 from models import ArtworkMetadata, ArtworkStatus
 from publishing_agent import PublishingAgent
 from approval import submit_for_review
@@ -19,9 +20,7 @@ def process_artwork(
     if not artwork:
         return {"ok": False, "error": "Artwork not found", "artwork_id": artwork_id}
 
-    meta = metadata_override or artwork.metadata
-    if not meta.website:
-        meta.website = "https://www.roxymegyesi.com/"
+    meta = ensure_auto_platforms(metadata_override or artwork.metadata)
 
     update_artwork(artwork_id, metadata=meta)
     upload_path = artwork.upload_path
@@ -40,14 +39,17 @@ def process_artwork(
         revision_notes=revision or None,
         include_crops=include_crops,
     )
-    update_artwork(artwork_id, output_path=result["output_folder"])
+    content = result.get("content", {})
+    meta = metadata_from_ai(content, meta)
+    update_artwork(artwork_id, output_path=result["output_folder"], metadata=meta)
     submit_for_review(artwork_id)
     return {
         "ok": True,
         "artwork_id": artwork_id,
         "filename": artwork.filename,
         "output_folder": result["output_folder"],
-        "content": result.get("content", {}),
+        "content": content,
+        "metadata": meta.to_dict(),
         "generated_images": result.get("generated_images", []),
     }
 

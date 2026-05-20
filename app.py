@@ -69,7 +69,7 @@ def shared_metadata_form(key_prefix: str = "shared") -> ArtworkMetadata:
     st.markdown("**Platforms**")
     pcols = st.columns(len(PLATFORM_OPTIONS))
     platforms = []
-    default_plat = ["Instagram", "Pinterest"]
+    default_plat = list(PLATFORM_OPTIONS)
     for i, platform in enumerate(PLATFORM_OPTIONS):
         with pcols[i]:
             if st.checkbox(
@@ -118,6 +118,15 @@ def metadata_form(artwork, key_prefix: str) -> ArtworkMetadata:
 
 
 def render_content_cards(content: dict):
+    if content.get("suggested_title") or content.get("suggested_theme"):
+        st.markdown("**AI detected from image**")
+        t1, t2, t3 = st.columns(3)
+        with t1:
+            st.metric("Title", content.get("suggested_title", "—"))
+        with t2:
+            st.metric("Theme", content.get("suggested_theme", "—"))
+        with t3:
+            st.metric("Collection", content.get("suggested_collection", "—"))
     if content.get("instagram_caption"):
         st.markdown("**Instagram (short)**")
         st.info(content["instagram_caption"])
@@ -168,17 +177,35 @@ def render_artwork_review(artwork_id: int):
                 with pcols[idx % 3]:
                     st.image(img_bytes, caption=name.replace("_", " "))
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        generate = st.button("Generate captions", key=f"gen_{artwork_id}", type="primary")
-    with c2:
-        export_crops = st.button("Captions + export crops", key=f"crops_{artwork_id}")
-    with c3:
-        both = st.button("Full pack (copy + crops)", key=f"full_{artwork_id}")
-
-    if generate or export_crops or both:
+    st.info(
+        "**AI Auto Prep** analyses the image, fills title & theme, writes Instagram/Pinterest/shop copy, "
+        "and exports all platform-sized crops. You still approve before posting."
+    )
+    if st.button("AI Auto Prep — analyse, caption, crop all platforms", key=f"auto_{artwork_id}", type="primary"):
         update_artwork(artwork_id, metadata=meta)
-        include_crops = export_crops or both
+        with st.spinner("AI analysing image, generating copy & crops..."):
+            result = process_artwork(
+                artwork_id,
+                get_api_key(),
+                include_crops=True,
+                metadata_override=meta,
+            )
+        if result.get("ok"):
+            st.session_state[f"last_result_{artwork_id}"] = result
+            st.success("Auto prep complete — review below, then Approve.")
+        else:
+            st.error(result.get("error", "Failed"))
+        st.rerun()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        generate = st.button("Captions only (no crops)", key=f"gen_{artwork_id}")
+    with c2:
+        export_crops = st.button("Captions + crops", key=f"crops_{artwork_id}")
+
+    if generate or export_crops:
+        update_artwork(artwork_id, metadata=meta)
+        include_crops = export_crops
         with st.spinner("Processing..."):
             result = process_artwork(
                 artwork_id,
@@ -236,9 +263,15 @@ def render_artwork_review(artwork_id: int):
 def page_batch_studio():
     st.markdown('<p class="section-tag">Batch studio</p>', unsafe_allow_html=True)
     st.subheader("Upload & process multiple artworks")
-    st.caption("Upload several pieces, set shared brand settings, then generate captions, hashtags, and platform crops for all at once.")
+    st.caption("Upload images → one click → AI detects title/theme per picture, writes captions & hashtags, crops for Instagram, Pinterest, website & Gelato.")
+
+    st.success(
+        "**Fully AI-driven prep:** You do not need to type title or theme manually. "
+        "Select platforms below, upload images, then click **AI Auto Prep all**."
+    )
 
     shared_meta = shared_metadata_form("batch")
+    auto_on_upload = st.checkbox("Auto AI prep immediately after each upload", value=False)
 
     uploaded_files = st.file_uploader(
         "Drop multiple artwork images (JPG / PNG)",
@@ -250,6 +283,21 @@ def page_batch_studio():
     if uploaded_files:
         names = save_uploads(uploaded_files, shared_meta)
         st.success(f"Added {len(names)} artwork(s) to catalogue.")
+        if auto_on_upload and get_api_key():
+            from db import get_artwork_by_filename
+            progress = st.progress(0)
+            for i, name in enumerate(names):
+                art = get_artwork_by_filename(name)
+                if art:
+                    progress.progress((i + 1) / len(names), text=f"AI prep {name}...")
+                    m = shared_meta
+                    if not m.title:
+                        m.title = os.path.splitext(name)[0].replace("_", " ").title()
+                    process_artwork(art.id, get_api_key(), include_crops=True, metadata_override=m)
+            progress.empty()
+            st.success("Auto prep finished for new uploads.")
+        elif auto_on_upload:
+            st.warning("Add Gemini API key to enable auto prep on upload.")
 
         st.markdown("**Upload preview**")
         cols = st.columns(min(4, len(names)))
@@ -266,7 +314,7 @@ def page_batch_studio():
     b1, b2, b3 = st.columns(3)
     with b1:
         process_all = st.button(
-            "Process all drafts (captions + hashtags + crops)",
+            "AI Auto Prep all — title, theme, captions, all platform crops",
             type="primary",
             disabled=len(drafts) == 0,
         )
@@ -318,6 +366,11 @@ def page_batch_studio():
                 st.error(f"{r.get('filename', r.get('artwork_id'))}: {r.get('error')}")
                 continue
             with st.expander(f"✓ {r.get('filename', 'artwork')}", expanded=False):
+                if r.get("metadata"):
+                    st.caption(
+                        f"Title: {r['metadata'].get('title')} · Theme: {r['metadata'].get('theme')} · "
+                        f"Collection: {r['metadata'].get('collection')}"
+                    )
                 render_content_cards(r.get("content", {}))
                 st.caption(r.get("output_folder", ""))
                 if r.get("generated_images"):
